@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>盐碱地精准改良 · 诊断工作台</title>
+  <link rel="stylesheet" href="vendor/element-plus.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app" v-cloak>
+  <div class="app-shell" :class="{ docked: isWide && calcOpen, 'calc-open': calcOpen }">
+
+    <!-- 左侧栏 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><app-icon name="layers" :size="24"></app-icon></div>
+        <div class="brand-text">
+          <strong>盐碱地精准改良</strong>
+          <span>土壤健康诊断与精准改良 Agent</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div v-for="group in navGroups" :key="group.label" class="nav-group">
+          <div class="nav-group-label">{{ group.label }}</div>
+          <button
+            v-for="item in group.items" :key="item.id"
+            class="nav-item" :class="{ active: item.active }"
+            @click="handleNav(item)">
+            <app-icon :name="item.icon" :size="17"></app-icon>
+            <span class="nav-label">{{ item.label }}</span>
+            <span v-if="item.count" class="nav-count">{{ item.count }}</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="plot-section">
+        <div class="plot-section-head">
+          <span>地块</span>
+          <span class="muted">5</span>
+        </div>
+        <button
+          v-for="p in plots" :key="p.id"
+          class="plot-item" :class="{ selected: p.id === selectedPlot }"
+          @click="selectPlot(p.id)">
+          <span class="plot-dot" :class="'dot-' + p.status"></span>
+          <span class="plot-main">
+            <span class="plot-id">{{ p.id }}</span>
+            <span class="plot-meta">{{ p.area }} 亩 · ECe {{ p.ece }} dS/m</span>
+            <span class="plot-sub">
+              <span>{{ p.statusLabel }}</span>
+              <span v-if="p.drainageKey === 'poor'" class="mini-badge">排水受限</span>
+            </span>
+          </span>
+        </button>
+        <button class="link-btn" @click="switchTab('limits')">
+          查看全部地块 <app-icon name="arrowRight" :size="13"></app-icon>
+        </button>
+      </div>
+
+      <div class="sidebar-foot">
+        <span class="foot-dot"></span> 教学模拟数据 · 不替代实测
+      </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="main" ref="mainEl">
+      <div v-if="scenarioLoading" class="top-progress"></div>
+
+      <header class="topbar">
+        <div class="title-block">
+          <div class="eyebrow">土壤健康诊断 · 精准改良</div>
+          <h1>{{ meta.caseTitle }}</h1>
+          <p>{{ meta.subtitle }}</p>
+        </div>
+        <div class="top-actions">
+          <el-select
+            :model-value="scenario"
+            class="scenario-select"
+            popper-class="academic-popper"
+            @change="changeScenario">
+            <el-option v-for="o in scenarioOptions" :key="o.value" :label="o.label" :value="o.value"></el-option>
+          </el-select>
+          <el-tag class="budget-tag" effect="plain">
+            <app-icon name="wallet" :size="14"></app-icon> 预算 60 万元
+          </el-tag>
+          <el-button class="btn-ghost" :loading="reanalyzing" @click="reanalyze">
+            <app-icon name="refresh" :size="15"></app-icon> 重新分析
+          </el-button>
+          <el-button class="btn-primary" :loading="exporting" @click="exportReport">
+            <app-icon name="download" :size="15"></app-icon> 导出报告
+          </el-button>
+        </div>
+      </header>
+
+      <section class="kpi-grid">
+        <article class="kpi-card">
+          <div class="kpi-icon"><app-icon name="map" :size="19"></app-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value"><count-number :value="200"></count-number><span>亩</span></div>
+            <div class="kpi-label">总地块面积</div>
+          </div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-icon"><app-icon name="dashboard" :size="19"></app-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value"><count-number :value="5"></count-number><span>个地块</span></div>
+            <div class="kpi-label">参与诊断地块</div>
+          </div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-icon"><app-icon name="wallet" :size="19"></app-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value"><count-number :value="60"></count-number><span>万元</span></div>
+            <div class="kpi-label">两年改良预算</div>
+          </div>
+        </article>
+        <article class="kpi-card" :class="{ warn: isReduced, 'is-updating': scenarioLoading }">
+          <div class="kpi-icon"><app-icon name="droplet" :size="19"></app-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value"><count-number :value="kpiWater"></count-number><span>m³/亩·年</span></div>
+            <div class="kpi-label">{{ isReduced ? '供水上限 −25%' : '基础供水标准' }}</div>
+          </div>
+        </article>
+      </section>
+
+      <nav class="tabs" role="tablist">
+        <button
+          v-for="(t, i) in tabs" :key="t.id"
+          class="tab" :class="{ active: activeTab === t.id }"
+          :data-tab="t.id"
+          :title="'快捷键 ' + (i + 1)"
+          @click="switchTab(t.id)">
+          {{ t.label }}
+        </button>
+      </nav>
+
+      <section v-if="loading" class="loading-wrap">
+        <div class="skeleton-card" v-for="n in 3" :key="n">
+          <div class="sk-line w40"></div>
+          <div class="sk-line w80"></div>
+          <div class="sk-line w60"></div>
+        </div>
+      </section>
+
+      <template v-else>
+        <!-- 总览 -->
+        <section v-if="activeTab === 'overview'" class="tab-panel">
+          <div class="insight-bar">
+            <div class="insight-icon"><app-icon name="alert" :size="18"></app-icon></div>
+            <div class="insight-text">
+              <strong>诊断提示</strong>
+              S04/S05 排水受限；ESP/SAR/CEC 缺失，钠化暂不可判定。建议先补测，再决定是否采用 C 路线。
+            </div>
+            <button class="link-btn" @click="openTestPlan">查看补测建议 <app-icon name="arrowRight" :size="13"></app-icon></button>
+          </div>
+
+          <section class="card table-card">
+            <header class="card-head">
+              <div>
+                <h3>分地块诊断</h3>
+                <p>点击地块或数值查看计算明细</p>
+              </div>
+              <div class="legend">
+                <span class="legend-item"><i class="legend-dot light"></i>轻度</span>
+                <span class="legend-item"><i class="legend-dot moderate"></i>中度</span>
+                <span class="legend-item"><i class="legend-dot poor"></i>排水受限</span>
+                <span class="legend-item"><i class="legend-dot gray"></i>待测</span>
+              </div>
+            </header>
+
+            <div class="table-wrap">
+              <table class="diag-table">
+                <thead>
+                  <tr>
+                    <th class="row-head">指标</th>
+                    <th
+                      v-for="p in plots" :key="p.id"
+                      :class="{ selected: p.id === selectedPlot, 'warn-col': p.drainageKey === 'poor' }">
+                      <button class="plot-head" @click="selectPlot(p.id)">
+                        <span>{{ p.id }}</span>
+                        <app-icon v-if="p.drainageKey === 'poor'" name="alert" :size="12" class="warn-icon"></app-icon>
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in tableRows" :key="row.key">
+                    <th class="row-head">
+                      <span>{{ row.label }}</span>
+                      <span v-if="row.unit" class="unit">{{ row.unit }}</span>
+                    </th>
+                    <td
+                      v-for="p in plots" :key="p.id"
+                      :class="{
+                        selected: p.id === selectedPlot,
+                        'warn-col': p.drainageKey === 'poor',
+                        'num-cell': row.clickable
+                      }"
+                      @click="row.clickable && openCalc(p.id)">
+                      <template v-if="row.kind === 'ece'">
+                        <span class="ece-cell" :class="'salt-' + p.saltKey">
+                          <b>{{ p.ece.toFixed(1) }}</b>
+                          <span class="mini-tag">{{ p.saltClass }}</span>
+                        </span>
+                      </template>
+                      <template v-else-if="row.kind === 'tag'">
+                        <span v-for="(t, ti) in row.tags(p)" :key="ti" class="cell-tag" :class="t.cls">{{ t.text }}</span>
+                      </template>
+                      <template v-else>
+                        <span class="num-value">{{ row.value(p) }}</span>
+                        <span v-if="row.clickable" class="fn">ƒ</span>
+                      </template>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <footer class="table-foot">
+              <span>ECe 为 25℃饱和糊状土浸提液电导率；pH 为土:水=1:2.5。</span>
+              <span>钠化：5 个地块均待测（ESP/SAR/CEC 缺失）。</span>
+            </footer>
+          </section>
+
+          <div class="chart-row">
+            <section class="card chart-card">
+              <header class="card-head compact">
+                <div>
+                  <h3>ECe 盐分分档</h3>
+                  <p>25℃饱和糊状土浸提液</p>
+                </div>
+                <span class="unit-chip">dS/m</span>
+              </header>
+              <e-chart :option="eceOption" height="214px"></e-chart>
+              <div class="chart-legend">
+                <span class="legend-item"><i class="legend-dot light"></i>轻度</span>
+                <span class="legend-item"><i class="legend-dot moderate"></i>中度</span>
+                <span class="legend-line"></span>
+                <span>阈值 2 / 4 / 8</span>
+              </div>
+            </section>
+
+            <section class="card chart-card">
+              <header class="card-head compact">
+                <div>
+                  <h3>玉米相对产量潜力</h3>
+                  <p>仅按盐分胁迫估算</p>
+                </div>
+                <span class="unit-chip">%</span>
+              </header>
+              <e-chart :option="yieldOption" height="214px"></e-chart>
+              <div class="chart-legend">
+                <span>用于诊断，不是产量预测</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- 数据与质控 -->
+        <section v-else-if="activeTab === 'qc'" class="tab-panel">
+          <div class="mini-kpi-grid">
+            <article class="mini-kpi"><strong>5</strong><span>地块记录</span></article>
+            <article class="mini-kpi"><strong>5 / 10</strong><span>关键字段完整</span></article>
+            <article class="mini-kpi warn"><strong>5</strong><span>缺失/待补测项</span></article>
+            <article class="mini-kpi"><strong>5 / 5</strong><span>数值范围检查通过</span></article>
+          </div>
+
+          <section class="card">
+            <header class="card-head">
+              <div><h3>质控与缺失检查</h3><p>单位、缺失、负值、方法口径</p></div>
+            </header>
+            <table class="data-table">
+              <thead><tr><th>检查项</th><th>结果</th><th>说明</th><th>处理</th></tr></thead>
+              <tbody>
+                <tr v-for="q in qc" :key="q.item">
+                  <td class="strong">{{ q.item }}</td>
+                  <td><span class="cell-tag" :class="q.level === 'ok' ? 'tag-green' : q.level === 'warn' ? 'tag-amber' : 'tag-blue'">{{ q.result }}</span></td>
+                  <td>{{ q.detail }}</td>
+                  <td class="muted">{{ q.action }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="card">
+            <header class="card-head">
+              <div><h3>数据来源分层</h3><p>教师数据不覆盖、模拟数据单独标注</p></div>
+            </header>
+            <div class="provenance-row">
+              <span class="provenance-chip teacher">教师给定 · 5</span>
+              <span class="provenance-chip retrieved">检索资料 · 8</span>
+              <span class="provenance-chip simulated">学生模拟 · 7</span>
+            </div>
+            <p class="note-text">正式版在数据表上直接显示来源徽章；参数表记录单位、干湿基、适用范围与出处。所有标准阈值需组员逐条核对。</p>
+          </section>
+        </section>
+
+        <!-- 限制因素 -->
+        <section v-else-if="activeTab === 'limits'" class="tab-panel">
+          <div class="limit-grid">
+            <article
+              v-for="p in plots" :key="p.id"
+              class="limit-card" :class="{ selected: p.id === selectedPlot }"
+              @click="selectPlot(p.id)">
+              <header>
+                <div class="limit-id">{{ p.id }}</div>
+                <span class="cell-tag" :class="p.status === 'limited' ? 'tag-orange' : p.status === 'watch' ? 'tag-amber' : 'tag-green'">{{ p.statusLabel }}</span>
+              </header>
+              <div class="limit-tags">
+                <span v-for="t in p.limits" :key="t" class="cell-tag" :class="limitClass(t)">{{ t }}</span>
+              </div>
+              <p class="limit-note">{{ p.note }}</p>
+              <div class="limit-rules">规则：{{ p.rules.join(' · ') }}</div>
+              <div class="limit-foot">
+                <span>ECe {{ p.ece.toFixed(1) }}</span>
+                <span>pH {{ p.ph.toFixed(1) }}</span>
+                <span>出苗 {{ p.emergence }}%</span>
+              </div>
+            </article>
+          </div>
+          <div class="note-band">
+            <app-icon name="info" :size="16"></app-icon>
+            钠化：5 个地块均待测（ESP/SAR/CEC 缺失），不能仅凭 pH 或 ECe 判定。排水分级为教师给定，去向与水质仍需调查。
+          </div>
+        </section>
+
+        <!-- 方案比较 -->
+        <section v-else-if="activeTab === 'routes'" class="tab-panel">
+          <div class="recommend-bar">
+            <div class="recommend-icon"><app-icon name="target" :size="18"></app-icon></div>
+            <div>
+              <strong>推荐组合</strong>
+              S01–S02 以 A 为主；S03 走 B + 定额淋洗；S04–S05 先排水、补测 ESP/SAR/CEC，C 仅条件性。
+            </div>
+          </div>
+
+          <div v-if="isReduced" class="scenario-banner">
+            <app-icon name="alert" :size="16"></app-icon>
+            供水上限 −25%：B/C 在 S03–S05 淋洗受限。建议转向 A + 覆盖/耐盐品种，并把 C 的排水改造放到第一年。
+          </div>
+
+          <section class="card">
+            <header class="card-head">
+              <div><h3>3 条改良路线比较</h3><p>先筛适用性，再比费用；不以低成本抵消安全目标</p></div>
+            </header>
+            <table class="data-table route-table">
+              <thead>
+                <tr>
+                  <th>路线</th><th>核心措施</th><th>适用地块</th><th>先决条件</th><th>两年费用（万元）</th><th>适用性</th><th>主要限制</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in routeList" :key="r.id">
+                  <td><span class="route-id">{{ r.id }}</span> {{ r.name }}</td>
+                  <td>{{ r.measures }}</td>
+                  <td>{{ r.plots }}</td>
+                  <td>{{ r.precondition }}</td>
+                  <td><span class="strong">{{ r.cost }}</span><br><span class="muted small">{{ r.costNote }}</span></td>
+                  <td><span class="cell-tag" :class="routeClass(r.displaySuitabilityKey)">{{ r.displaySuitability }}</span></td>
+                  <td class="muted">{{ r.limits }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <div class="note-band">
+            <app-icon name="info" :size="16"></app-icon>
+            C 路线在 ESP/SAR/CEC 与排水去向缺失时不能给精确石膏用量；50–70 万元/两年可能超过 60 万元预算。
+          </div>
+        </section>
+
+        <!-- 资源与费用 -->
+        <section v-else-if="activeTab === 'cost'" class="tab-panel">
+          <div class="split-grid">
+            <section class="card">
+              <header class="card-head">
+                <div><h3>资源供需</h3><p>秸秆、粪肥、额外淋洗水</p></div>
+              </header>
+              <div class="resource-list">
+                <div v-for="r in resourceRows" :key="r.name" class="resource-row">
+                  <div class="resource-head">
+                    <span>{{ r.name }}</span>
+                    <span class="mono">需 {{ r.demand }} / 供 {{ r.supply }} {{ r.unit }}</span>
+                  </div>
+                  <div class="bar"><span :style="{ width: Math.min(100, r.pct) + '%' }" :class="{ over: r.over }"></span></div>
+                  <div class="resource-note">
+                    {{ r.note }}
+                    <span v-if="r.over" class="cell-tag tag-red">缺口</span>
+                  </div>
+                </div>
+              </div>
+              <p class="note-text">秸秆按 30% 产炭率、粪肥按 7.5 t/ha 估算；均为示意，需按组员查证参数替换。</p>
+            </section>
+
+            <section class="card">
+              <header class="card-head">
+                <div><h3>费用构成</h3><p>两年合计，含运输、施用、监测与管理</p></div>
+              </header>
+              <table class="data-table compact">
+                <thead><tr><th>项目</th><th>金额</th><th>占比</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in costRows" :key="c.item">
+                    <td>{{ c.item }}<br><span class="muted small">{{ c.note }}</span></td>
+                    <td class="mono">{{ c.amount.toFixed(1) }} 万元</td>
+                    <td><div class="bar small"><span :style="{ width: c.pct + '%' }"></span></div></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="budget-card">
+                <div class="budget-line"><span>两年总费用</span><strong>{{ costTotal.toFixed(1) }} 万元</strong></div>
+                <div class="budget-line"><span>预算</span><strong>60.0 万元</strong></div>
+                <div class="bar"><span :style="{ width: budgetPct + '%' }"></span></div>
+                <p>剩余 {{ budgetLeft }} 万元。价格为示意，需替换为组员查证单价。</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- 两年计划 -->
+        <section v-else-if="activeTab === 'plan'" class="tab-panel">
+          <div class="timeline">
+            <article v-for="p in plan" :key="p.period" class="timeline-card">
+              <div class="timeline-period">{{ p.period }}</div>
+              <h3>{{ p.title }}</h3>
+              <ul>
+                <li v-for="t in p.tasks" :key="t">{{ t }}</li>
+              </ul>
+            </article>
+          </div>
+
+          <section class="card">
+            <header class="card-head">
+              <div><h3>两年监测计划</h3><p>土壤—排水—作物配套</p></div>
+            </header>
+            <table class="data-table">
+              <thead><tr><th>指标</th><th>频率</th><th>点位</th><th>目的</th></tr></thead>
+              <tbody>
+                <tr v-for="m in monitoring" :key="m.indicator">
+                  <td class="strong">{{ m.indicator }}</td>
+                  <td>{{ m.frequency }}</td>
+                  <td>{{ m.points }}</td>
+                  <td class="muted">{{ m.purpose }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="note-text">出苗率只用于描述现状，不作为措施效果；效果验证需结合对照与重复监测。</p>
+          </section>
+        </section>
+
+        <!-- 依据追溯 -->
+        <section v-else-if="activeTab === 'sources'" class="tab-panel">
+          <div class="source-stats">
+            <span class="provenance-chip teacher">标准/官方 · 3</span>
+            <span class="provenance-chip retrieved">论文 · 2 / 目标 8</span>
+            <span class="provenance-chip simulated">学生模拟 · 0 / 目标 6</span>
+            <span class="source-stat-note">原型仅展示 5 条示例；正式版补足 ≥20 份并逐条核对</span>
+          </div>
+
+          <div class="filter-row">
+            <button
+              v-for="f in ['全部', '标准', '论文', '官方']" :key="f"
+              class="chip" :class="{ active: sourceFilter === f }"
+              @click="sourceFilter = f">
+              {{ f }}
+            </button>
+          </div>
+
+          <div class="source-grid">
+            <article v-for="s in filteredSources" :key="s.id" class="source-card" @click="openSource(s.id)">
+              <header>
+                <span class="cell-tag" :class="sourceClass(s.type)">{{ s.type }}</span>
+                <span class="cell-tag tag-amber">{{ s.status }}</span>
+              </header>
+              <h3>{{ s.title }}</h3>
+              <p class="source-meta">{{ s.meta }}</p>
+              <p class="source-scope">{{ s.scope }}</p>
+              <span class="link">查看来源卡片 <app-icon name="arrowRight" :size="13"></app-icon></span>
+            </article>
+          </div>
+
+          <div class="note-band">
+            <app-icon name="alert" :size="16"></app-icon>
+            当前为原型占位：标准号、条款号、论文信息必须由组员在正式文本中核对后替换，不能直接使用 AI 生成值。
+          </div>
+        </section>
+      </template>
+    </main>
+
+    <!-- 右侧栏 -->
+    <aside class="right-rail">
+      <section class="rail-card rail-current">
+        <header>
+          <span class="rail-title">当前地块</span>
+          <span class="cell-tag" :class="selectedPlotData.status === 'limited' ? 'tag-orange' : selectedPlotData.status === 'watch' ? 'tag-amber' : 'tag-green'">{{ selectedPlotData.statusLabel }}</span>
+        </header>
+        <div class="current-id">{{ selectedPlotData.id }}</div>
+        <div class="current-metrics">
+          <div><span>pH</span><b>{{ selectedPlotData.ph.toFixed(1) }}</b></div>
+          <div><span>ECe</span><b>{{ selectedPlotData.ece.toFixed(1) }}</b></div>
+          <div><span>有机质</span><b>{{ selectedPlotData.om }}</b></div>
+          <div><span>容重</span><b>{{ selectedPlotData.bd.toFixed(2) }}</b></div>
+        </div>
+        <button class="rail-link" @click="openCalc(selectedPlotData.id)">
+          <app-icon name="calculator" :size="14"></app-icon> 查看计算明细
+        </button>
+      </section>
+
+      <section class="rail-card rail-gap">
+        <header>
+          <span class="rail-title"><app-icon name="alert" :size="15"></app-icon> 数据缺口</span>
+          <span class="count">5</span>
+        </header>
+        <ul>
+          <li>ESP、SAR、CEC 未提供</li>
+          <li>排水去向未提供</li>
+          <li>主要离子未提供</li>
+          <li>粪肥品质未检测</li>
+        </ul>
+        <p class="rail-note">钠化程度暂不可判定，石膏用量仅条件性建议。</p>
+        <button class="rail-link" @click="openTestPlan">
+          查看补测建议 <app-icon name="arrowRight" :size="13"></app-icon>
+        </button>
+      </section>
+
+      <section class="rail-card" :class="{ 'is-updating': scenarioLoading }">
+        <header>
+          <span class="rail-title">方案比较</span>
+          <button class="link" @click="goRouteTab">查看全部</button>
+        </header>
+        <div v-for="r in routeList" :key="r.id" class="route-mini" @click="goRouteTab">
+          <span class="route-mini-id">{{ r.id }}</span>
+          <span class="route-mini-name">{{ r.name }}</span>
+          <span class="cell-tag" :class="routeClass(r.displaySuitabilityKey)">{{ r.displaySuitability }}</span>
+        </div>
+      </section>
+
+      <section class="rail-card">
+        <header>
+          <span class="rail-title">依据追溯</span>
+          <button class="link" @click="goSourceTab">全部</button>
+        </header>
+        <div v-for="s in sources.slice(0, 3)" :key="s.id" class="source-mini" @click="openSource(s.id)">
+          <app-icon name="fileText" :size="15"></app-icon>
+          <div>
+            <div class="source-mini-title">{{ s.title }}</div>
+            <div class="source-mini-meta">{{ s.meta }}</div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 计算明细抽屉 -->
+    <aside class="calc-drawer" :class="{ open: calcOpen }" aria-label="计算明细">
+      <header class="drawer-head">
+        <div>
+          <span class="eyebrow">CALCULATION</span>
+          <h2>计算明细</h2>
+        </div>
+        <button class="icon-btn" @click="closeCalc" aria-label="关闭计算明细"><app-icon name="x" :size="17"></app-icon></button>
+      </header>
+
+      <div class="plot-pills">
+        <button v-for="p in plots" :key="p.id" :class="{ active: p.id === selectedPlot }" @click="selectPlot(p.id)">{{ p.id }}</button>
+      </div>
+
+      <div class="drawer-scroll">
+        <section class="calc-block">
+          <h3>干土质量</h3>
+          <div class="formula">M = A × d × ρ</div>
+          <div class="calc-table">
+            <div><span>A</span><b>{{ calc.area }} 亩 = {{ calc.areaM2Text }} m²</b></div>
+            <div><span>d</span><b>0.2 m</b></div>
+            <div><span>ρ</span><b>{{ calc.bdText }} t/m³</b></div>
+          </div>
+          <div class="calc-result"><span>M</span><strong>{{ calc.MText }} t</strong></div>
+          <p class="calc-note">折合 {{ calc.perMuText }} t/亩（干基）。</p>
+        </section>
+
+        <section class="calc-block">
+          <h3>淋洗需水（稳态估算）</h3>
+          <div class="formula small">LR = ECw / (5 × ECe,t − ECw)</div>
+          <div class="calc-table">
+            <div><span>ECw</span><b>0.8 dS/m</b></div>
+            <div><span>ECe,t</span><b>{{ calc.targetEce }} dS/m</b></div>
+            <div><span>LR</span><b>{{ calc.lr }}</b></div>
+            <div><span>根层</span><b>{{ calc.rootDepth }} m</b></div>
+          </div>
+          <div class="calc-result"><span>V</span><strong>{{ calc.waterTotalText }} m³/地块</strong></div>
+          <p class="calc-note">约 {{ calc.waterPerMu }} m³/亩·年，低于 40 m³/(亩·年) 上限；初始盐分高时需多年。</p>
+          <p v-if="calc.ece >= 5" class="calc-warn">
+            该地块初始 ECe {{ calc.eceText }} dS/m，按质量平衡粗算需数百 m³/亩，两年内不能完全降到 2.5；以排水 + 分期为目标。
+          </p>
+        </section>
+
+        <section class="calc-block">
+          <h3>依据</h3>
+          <button class="source-inline" @click="openSource('S-02')">
+            <app-icon name="fileText" :size="15"></app-icon>
+            <span>S-02 · 土壤检测方法（待核对）</span>
+            <app-icon name="chevronRight" :size="14"></app-icon>
+          </button>
+          <p class="calc-note">计算为教学估算，不替代田间试验。所有阈值需组员按正式文本核对。</p>
+        </section>
+      </div>
+    </aside>
+
+    <transition name="fade">
+      <div v-if="calcOpen" class="drawer-scrim" @click="closeCalc"></div>
+    </transition>
+  </div>
+
+  <!-- 来源抽屉 -->
+  <el-drawer v-model="sourceOpen" direction="rtl" size="380px" :with-header="false" class="source-drawer">
+    <div class="drawer-head">
+      <div>
+        <span class="eyebrow">SOURCE</span>
+        <h2>来源卡片</h2>
+      </div>
+      <button class="icon-btn" @click="sourceOpen = false" aria-label="关闭来源"><app-icon name="x" :size="17"></app-icon></button>
+    </div>
+    <div class="source-detail">
+      <div class="source-tags">
+        <span class="cell-tag" :class="sourceClass(currentSource.type)">{{ currentSource.type }}</span>
+        <span class="cell-tag tag-amber">{{ currentSource.status }}</span>
+      </div>
+      <h3>{{ currentSource.title }}</h3>
+      <p class="source-meta">{{ currentSource.meta }}</p>
+      <div class="kv"><span>适用范围</span><p>{{ currentSource.scope }}</p></div>
+      <div class="kv"><span>说明</span><p>{{ currentSource.note }}</p></div>
+      <div class="source-warning">
+        <app-icon name="alert" :size="15"></app-icon>
+        原型中的来源为占位；正式版必须替换为核对后的标准/论文条款。
+      </div>
+      <el-button class="btn-primary full" @click="copyCitation">
+        <app-icon name="clipboard" :size="15"></app-icon> 复制引用
+      </el-button>
+    </div>
+  </el-drawer>
+
+  <!-- 补测建议 -->
+  <el-dialog v-model="testPlanOpen" title="补测建议（示意）" width="640px" class="academic-dialog">
+    <table class="data-table compact">
+      <thead><tr><th>项目</th><th>目的</th><th>方法/依据</th><th>优先级</th></tr></thead>
+      <tbody>
+        <tr v-for="t in testPlan" :key="t.item">
+          <td class="strong">{{ t.item }}</td>
+          <td>{{ t.purpose }}</td>
+          <td class="muted">{{ t.method }}</td>
+          <td><span class="cell-tag" :class="t.priority === '高' ? 'tag-red' : t.priority === '中' ? 'tag-amber' : 'tag-gray'">{{ t.priority }}</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="dialog-note">费用待询价；本表为教学建议，不替代法定检测。</p>
+    <template #footer>
+      <el-button @click="testPlanOpen = false">关闭</el-button>
+    </template>
+  </el-dialog>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/element-plus.full.min.js"></script>
+<script src="vendor/echarts.min.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
