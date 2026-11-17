@@ -4,3 +4,8 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+/dsh/
+/dsh-home/
+/dsh-runtime/
+__pycache__/
+*.pyc

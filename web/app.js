@@ -120,6 +120,17 @@
       const sourceOpen = ref(false);
       const activeSourceId = ref('S-02');
       const testPlanOpen = ref(false);
+      const chatOpen = ref(false);
+      const chatLoading = ref(false);
+      const chatInput = ref('');
+      const chatBodyRef = ref(null);
+      const chatMessages = ref([
+        {
+          role: 'assistant',
+          text: '我是土壤健康诊断助手。可以问我：S04 为什么只能条件性？三条路线怎么选？两年预算怎么分？',
+          thinking: ''
+        }
+      ]);
       const sourceFilter = ref('全部');
       const scenario = ref('base');
 
@@ -426,9 +437,57 @@
 
       const handleNav = (item) => {
         if (item.id === 'console') { activeTab.value = 'overview'; return; }
+        if (item.id === 'chat') { openChat(); return; }
         if (item.id === 'library') { activeTab.value = 'sources'; return; }
         if (item.id === 'records') { activeTab.value = 'plan'; return; }
-        toast(`${item.label}：原型阶段暂未接入，正式版接 dsh/会话记录`, 'info');
+        toast(`${item.label}：原型阶段暂未接入`, 'info');
+      };
+
+      const scrollChatToBottom = () => {
+        nextTick(() => {
+          if (chatBodyRef.value) chatBodyRef.value.scrollTop = chatBodyRef.value.scrollHeight;
+        });
+      };
+
+      const openChat = () => {
+        calcOpen.value = false;
+        chatOpen.value = true;
+        scrollChatToBottom();
+      };
+
+      const closeChat = () => { chatOpen.value = false; };
+
+      const sendChat = async () => {
+        const text = chatInput.value.trim();
+        if (!text || chatLoading.value) return;
+        chatMessages.value.push({ role: 'user', text, thinking: '' });
+        chatInput.value = '';
+        chatLoading.value = true;
+        scrollChatToBottom();
+        try {
+          const res = await fetch('http://127.0.0.1:8000/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || `请求失败（${res.status}）`);
+          chatMessages.value.push({
+            role: 'assistant',
+            text: data.answer || '（空回复）',
+            thinking: data.thinking || ''
+          });
+        } catch (err) {
+          chatMessages.value.push({
+            role: 'assistant',
+            error: true,
+            text: `Agent 服务暂时不可用：${err.message}\n请确认 server/start.ps1 已启动，端口 8000 可访问。`,
+            thinking: ''
+          });
+        } finally {
+          chatLoading.value = false;
+          scrollChatToBottom();
+        }
       };
 
       const onKey = (e) => {
@@ -437,6 +496,7 @@
           calcOpen.value = false;
           sourceOpen.value = false;
           testPlanOpen.value = false;
+          chatOpen.value = false;
           return;
         }
         const n = Number(e.key);
@@ -468,9 +528,11 @@
         loading, scenarioLoading, reanalyzing, exporting,
         activeTab, mainEl, selectedPlot, selectedPlotData, calcOpen, isWide,
         sourceOpen, testPlanOpen, scenario, isReduced, kpiWater, calc,
+        chatOpen, chatLoading, chatInput, chatMessages, chatBodyRef,
         switchTab, selectPlot, openCalc, openSource, openTestPlan, closeCalc,
         changeScenario, reanalyze, exportReport, copyCitation,
-        goRouteTab, goSourceTab, handleNav, routeClass, sourceClass, limitClass
+        goRouteTab, goSourceTab, handleNav, routeClass, sourceClass, limitClass,
+        openChat, closeChat, sendChat
       };
     }
   });
