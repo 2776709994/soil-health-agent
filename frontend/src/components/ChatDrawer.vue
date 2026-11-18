@@ -12,7 +12,8 @@
       <div v-for="(m, i) in chatMessages" :key="i" class="chat-msg" :class="m.role">
         <div class="chat-avatar"><app-icon :name="m.role === 'user' ? 'chat' : 'leaf'" :size="15" /></div>
         <div class="chat-bubble" :class="{ error: m.error }">
-          <div class="chat-text">{{ m.text }}</div>
+          <MarkdownView v-if="m.role === 'assistant'" :text="m.text" />
+          <div v-else class="chat-text">{{ m.text }}</div>
           <details v-if="m.thinking" class="chat-thinking">
             <summary>思考过程</summary>
             <pre>{{ m.thinking }}</pre>
@@ -43,6 +44,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useCaseStore } from '@/stores/useCaseStore'
+import MarkdownView from '@/components/MarkdownView.vue'
 
 const store = useCaseStore()
 const { chatOpen, chatMessages, chatLoading, chatInput } = storeToRefs(store)
