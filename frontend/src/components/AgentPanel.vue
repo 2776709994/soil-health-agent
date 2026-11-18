@@ -106,6 +106,7 @@
           <div class="agent-meta"><span>会话</span><b>{{ agentSessionId || '新任务' }}</b></div>
           <div class="agent-meta"><span>步骤</span><b>{{ agentMessages.length }}</b></div>
           <div class="agent-meta"><span>工具调用</span><b>{{ toolCount }}</b></div>
+          <div class="agent-meta"><span>思考强度</span><b>低</b></div>
           <div class="agent-meta"><span>任务 ID</span><b>{{ agentTaskId || '—' }}</b></div>
         </section>
 
