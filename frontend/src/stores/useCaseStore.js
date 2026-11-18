@@ -38,6 +38,8 @@ export const useCaseStore = defineStore('case', () => {
   const agentTaskId = ref('')
   const agentSessionId = ref('')
   const agentArtifacts = ref([])
+  const agentSessions = ref([])
+  const agentCurrentKey = ref('')
   const artifactOpen = ref(false)
   const artifactName = ref('')
   const artifactContent = ref('')
@@ -57,7 +59,7 @@ export const useCaseStore = defineStore('case', () => {
       label: '工作台',
       items: [
         { id: 'console', label: '诊断工作台', icon: 'dashboard', active: true },
-        { id: 'chat', label: '对话助手', icon: 'chat' },
+        { id: 'chat', label: 'Agent 助手', icon: 'chat' },
       ],
     },
     {
@@ -341,20 +343,97 @@ export const useCaseStore = defineStore('case', () => {
     }
   }
 
+  const loadAgentSessions = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/sessions`)
+      if (!res.ok) return
+      const data = await res.json()
+      agentSessions.value = data.sessions || []
+    } catch (e) {
+      // history is optional
+    }
+  }
+
+  const saveAgentSession = async () => {
+    const key = agentCurrentKey.value
+    if (!key || !agentMessages.value.some(m => m.kind === 'user')) return
+    const firstUser = agentMessages.value.find(m => m.kind === 'user')
+    const title = (firstUser?.text || '新任务').replace(/\s+/g, ' ').slice(0, 36)
+    const messages = agentMessages.value.map(m => {
+      if (m.kind === 'thinking') return { ...m, text: String(m.text || '').slice(0, 12000) }
+      if (m.kind === 'tool') return { ...m, result: String(m.result || '').slice(0, 4000) }
+      return m
+    })
+    try {
+      await fetch(`${API_BASE}/api/agent/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: key,
+          title,
+          sessionId: agentSessionId.value || null,
+          messages,
+          final: agentFinal.value,
+          status: agentStatus.value,
+        }),
+      })
+      await loadAgentSessions()
+    } catch (e) {
+      // history save is best effort
+    }
+  }
+
+  const selectAgentSession = async (key) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/sessions/${encodeURIComponent(key)}`)
+      if (!res.ok) return
+      const row = await res.json()
+      if (agentRunning.value) cancelAgent()
+      agentCurrentKey.value = row.id || key
+      agentMessages.value = row.messages || []
+      agentFinal.value = row.final || ''
+      agentSessionId.value = row.sessionId || ''
+      agentStatus.value = row.status || '待命'
+      agentError.value = ''
+      agentPrompt.value = ''
+      activeTab.value = 'agent'
+      chatOpen.value = false
+      calcOpen.value = false
+      refreshArtifacts()
+    } catch (e) {
+      agentError.value = `读取历史会话失败：${e.message}`
+    }
+  }
+
+  const deleteAgentSession = async (key) => {
+    try {
+      await fetch(`${API_BASE}/api/agent/sessions/${encodeURIComponent(key)}`, { method: 'DELETE' })
+    } catch (e) {
+      // ignore
+    }
+    if (agentCurrentKey.value === key) {
+      newAgentTask()
+    }
+    await loadAgentSessions()
+  }
+
   const openAgent = () => {
     activeTab.value = 'agent'
     chatOpen.value = false
     calcOpen.value = false
     refreshArtifacts()
+    loadAgentSessions()
   }
 
   const newAgentTask = () => {
     if (agentRunning.value) cancelAgent()
+    if (agentMessages.value.length) saveAgentSession()
     agentMessages.value = []
     agentFinal.value = ''
     agentError.value = ''
     agentSessionId.value = ''
     agentTaskId.value = ''
+    agentCurrentKey.value = ''
     agentStatus.value = '待命'
     agentPrompt.value = ''
   }
@@ -417,30 +496,35 @@ export const useCaseStore = defineStore('case', () => {
       agentStatus.value = '完成'
       agentRunning.value = false
       refreshArtifacts()
+      saveAgentSession()
       return
     }
     if (event.type === 'turn_end' && (event.reason || {}).kind === 'max-tokens') {
       agentError.value = '模型思考超长，未产出最终答案。请缩短问题或重试。'
       agentStatus.value = '失败'
       agentRunning.value = false
+      saveAgentSession()
       return
     }
     if (event.type === 'agent_error') {
       agentError.value = event.message || 'Agent 执行失败'
       agentStatus.value = '失败'
       agentRunning.value = false
+      saveAgentSession()
     }
   }
 
   const runAgent = async (prompt) => {
     const text = String(prompt ?? agentPrompt.value).trim()
     if (!text || agentRunning.value) return
+    if (!agentCurrentKey.value) agentCurrentKey.value = `chat-${Date.now()}`
     agentMessages.value.push({ kind: 'user', text })
     agentPrompt.value = ''
     agentFinal.value = ''
     agentError.value = ''
     agentStatus.value = '运行中'
     agentRunning.value = true
+    saveAgentSession()
     const taskId = `task-${Date.now()}`
     agentTaskId.value = taskId
     try {
@@ -717,6 +801,8 @@ export const useCaseStore = defineStore('case', () => {
     agentTaskId,
     agentSessionId,
     agentArtifacts,
+    agentSessions,
+    agentCurrentKey,
     artifactOpen,
     artifactName,
     artifactContent,
@@ -735,6 +821,9 @@ export const useCaseStore = defineStore('case', () => {
     cancelAgent,
     refreshArtifacts,
     openArtifact,
+    loadAgentSessions,
+    selectAgentSession,
+    deleteAgentSession,
     openSource,
     openTestPlan,
     changeScenario,

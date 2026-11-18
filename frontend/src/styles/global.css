@@ -919,3 +919,33 @@ a { color: inherit; }
   .agent-side { grid-template-columns: 1fr; }
   .agent-fab { right: 16px; bottom: 16px; width: 48px; height: 48px; }
 }
+
+/* Agent mode uses the full width; no right-rail column is reserved. */
+.app-shell.agent-mode { grid-template-columns: 232px minmax(0, 1fr); }
+.app-shell.agent-mode .main { padding-right: 24px; }
+@media (max-width: 1400px) {
+  .app-shell.agent-mode { grid-template-columns: 220px minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .app-shell.agent-mode { grid-template-columns: 64px minmax(0, 1fr); }
+}
+
+.session-row {
+  display: flex; align-items: center; gap: 6px; padding: 7px 4px;
+  border-top: 1px dashed var(--line-2); cursor: pointer; border-radius: 4px;
+}
+.session-row:hover { background: #fcfaf4; }
+.session-row.active { background: #eef3ea; }
+.session-main { flex: 1; min-width: 0; }
+.session-title {
+  font-size: 10.5px; line-height: 1.4; color: #3f3b33;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-meta { font-size: 9px; color: var(--muted); margin-top: 1px; }
+.session-del {
+  border: 0; background: transparent; color: var(--muted-2); cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 2px 4px; opacity: 0;
+  transition: opacity .16s ease, color .16s ease;
+}
+.session-row:hover .session-del { opacity: 1; }
+.session-del:hover { color: var(--red); }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ WORKSPACE = BASE / "agent-workspace"
 DSH_HOME = BASE / "dsh-home"
 PATCH = BASE / "agent" / "dsh" / "minimax.patch.yml"
 OUTPUTS = WORKSPACE / "outputs"
+HISTORY_DIR = BASE / "server" / "data"
+HISTORY_FILE = HISTORY_DIR / "agent_sessions.json"
 NODE = os.environ.get("NODE_BIN", "node")
 DSH_BIN = Path(
     os.environ.get(
@@ -56,6 +59,16 @@ class AgentRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     session_id: str | None = None
     task_id: str | None = None
+
+
+class SessionSave(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    title: str = ""
+    sessionId: str | None = None
+    messages: list[dict] = Field(default_factory=list)
+    final: str = ""
+    status: str = ""
+    updatedAt: int = 0
 
 
 ACTIVE_TASKS: dict[str, asyncio.subprocess.Process] = {}
@@ -291,3 +304,63 @@ def read_artifact(path: str):
     except OSError as exc:
         raise HTTPException(500, f"read failed: {exc}") from exc
     return {"name": target.name, "path": path, "content": content[:200_000]}
+
+
+def _load_history() -> list[dict]:
+    try:
+        data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _write_history(rows: list[dict]) -> None:
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = HISTORY_FILE.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(rows[-30:], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    tmp.replace(HISTORY_FILE)
+
+
+@app.get("/api/agent/sessions")
+def list_agent_sessions():
+    rows = _load_history()
+    rows.sort(key=lambda r: int(r.get("updatedAt") or 0), reverse=True)
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "id": row.get("id"),
+            "title": row.get("title") or "未命名任务",
+            "sessionId": row.get("sessionId"),
+            "status": row.get("status") or "",
+            "updatedAt": row.get("updatedAt") or 0,
+            "messageCount": len(row.get("messages") or []),
+        })
+    return {"sessions": sessions}
+
+
+@app.post("/api/agent/sessions")
+def save_agent_session(payload: SessionSave):
+    rows = [row for row in _load_history() if row.get("id") != payload.id]
+    row = payload.model_dump()
+    row["updatedAt"] = int(time.time() * 1000)
+    rows.append(row)
+    _write_history(rows)
+    return {"ok": True, "id": payload.id, "updatedAt": row["updatedAt"]}
+
+
+@app.delete("/api/agent/sessions/{session_key}")
+def delete_agent_session(session_key: str):
+    rows = [row for row in _load_history() if row.get("id") != session_key]
+    _write_history(rows)
+    return {"ok": True}
+
+
+@app.get("/api/agent/sessions/{session_key}")
+def get_agent_session(session_key: str):
+    for row in _load_history():
+        if row.get("id") == session_key:
+            return row
+    raise HTTPException(404, "session not found")

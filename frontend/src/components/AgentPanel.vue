@@ -81,6 +81,27 @@
 
       <aside class="agent-side">
         <section class="rail-card">
+          <header>
+            <span class="rail-title">历史会话</span>
+            <button class="link" @click="loadAgentSessions">刷新</button>
+          </header>
+          <div v-if="!agentSessions.length" class="agent-empty-side">还没有历史会话。</div>
+          <div
+            v-for="s in agentSessions"
+            :key="s.id"
+            class="session-row"
+            :class="{ active: s.id === agentCurrentKey }"
+            @click="selectAgentSession(s.id)"
+          >
+            <div class="session-main">
+              <div class="session-title">{{ s.title }}</div>
+              <div class="session-meta">{{ formatTime(s.updatedAt) }} · {{ s.status || '—' }}</div>
+            </div>
+            <button class="session-del" title="删除会话" @click.stop="deleteAgentSession(s.id)">×</button>
+          </div>
+        </section>
+
+        <section class="rail-card">
           <header><span class="rail-title">任务状态</span><span class="cell-tag" :class="statusClass">{{ agentStatus }}</span></header>
           <div class="agent-meta"><span>会话</span><b>{{ agentSessionId || '新任务' }}</b></div>
           <div class="agent-meta"><span>步骤</span><b>{{ agentMessages.length }}</b></div>
@@ -142,8 +163,20 @@ const {
   agentTaskId,
   agentSessionId,
   agentArtifacts,
+  agentSessions,
+  agentCurrentKey,
 } = storeToRefs(store)
-const { runAgent, cancelAgent, newAgentTask, refreshArtifacts, openArtifact, switchTab } = store
+const {
+  runAgent,
+  cancelAgent,
+  newAgentTask,
+  refreshArtifacts,
+  openArtifact,
+  switchTab,
+  selectAgentSession,
+  deleteAgentSession,
+  loadAgentSessions,
+} = store
 
 const suggestions = [
   '诊断 5 个地块，说明每个地块的主要限制，并给出分地块建议。',
@@ -161,4 +194,14 @@ const statusClass = computed(() => {
 
 const submit = () => runAgent(agentPrompt.value)
 const runSuggestion = text => runAgent(text)
+
+const formatTime = ts => {
+  if (!ts) return '—'
+  return new Date(ts).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 </script>

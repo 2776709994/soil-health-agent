@@ -1,11 +1,11 @@
 <template>
-  <aside class="chat-drawer" :class="{ open: chatOpen }" aria-label="对话助手">
+  <aside class="chat-drawer" :class="{ open: chatOpen }" aria-label="Agent 助手">
     <header class="drawer-head">
       <div>
         <span class="eyebrow">AGENT</span>
-        <h2>对话助手</h2>
+        <h2>Agent 助手</h2>
       </div>
-      <button class="icon-btn" @click="closeChat" aria-label="关闭对话助手"><app-icon name="x" :size="17" /></button>
+      <button class="icon-btn" @click="closeChat" aria-label="关闭Agent 助手"><app-icon name="x" :size="17" /></button>
     </header>
 
     <div ref="chatBodyRef" class="chat-body">

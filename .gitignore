@@ -12,3 +12,4 @@ __pycache__/
 /frontend/dist/
 /frontend/.vite/
 agent-workspace/outputs/
+server/data/

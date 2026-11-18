@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'agent-mode': activeTab === 'agent' }">
     <AppSidebar />
 
     <main ref="mainEl" class="main">
@@ -60,7 +60,7 @@
     <TestPlanDialog />
     <ArtifactDialog />
 
-    <button v-if="!chatOpen" class="agent-fab" title="打开对话助手" @click="openChat">
+    <button v-if="!chatOpen" class="agent-fab" title="打开 Agent 助手" @click="openChat">
       <app-icon name="chat" :size="23" />
     </button>
   </div>
