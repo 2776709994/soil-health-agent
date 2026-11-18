@@ -193,7 +193,8 @@ async def agent_stream(req: AgentRequest):
     env["DSH_HOME"] = str(DSH_HOME)
     task = (
         "请按步骤执行；先给结论，再给必要计算。单次最终回答控制在 1200 字内；"
-        "详细台账、清单或方案写入 outputs/。\n\n任务：" + req.message
+        "详细台账、清单或方案写入 outputs/。如果任务只要求生成文件，直接写目标文件，"
+        "不要重复完整诊断或无关计算。\n\n任务：" + req.message
     )
     cmd = _agent_command(task, req.session_id)
     try:
@@ -213,10 +214,20 @@ async def agent_stream(req: AgentRequest):
         final_text = ""
         max_tokens_hit = False
         saw_final = False
+        timed_out = False
         try:
             yield "data: " + json.dumps({"type": "task", "taskId": task_id}, ensure_ascii=False) + "\n\n"
+            deadline = time.monotonic() + 240
             while True:
-                line = await proc.stdout.readline()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                try:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    timed_out = True
+                    break
                 if not line:
                     break
                 text = line.decode("utf-8", errors="replace").strip()
@@ -233,6 +244,15 @@ async def agent_stream(req: AgentRequest):
                     saw_final = True
                 if kind == "turn_end" and (event.get("reason") or {}).get("kind") == "max-tokens":
                     max_tokens_hit = True
+            if timed_out:
+                yield "data: " + json.dumps(
+                    {
+                        "type": "agent_error",
+                        "message": "任务超过 240 秒，已停止。请拆成更小的任务（例如先诊断、再生成计划），或重试。",
+                    },
+                    ensure_ascii=False,
+                ) + "\n\n"
+                return
             stderr_b = await proc.stderr.read()
             returncode = await proc.wait()
             if not final_text:
@@ -314,6 +334,17 @@ def _load_history() -> list[dict]:
         return []
 
 
+def _normalize_stale(rows: list[dict]) -> bool:
+    changed = False
+    now = int(time.time() * 1000)
+    for row in rows:
+        updated = int(row.get("updatedAt") or 0)
+        if row.get("status") == "运行中" and now - updated > 10 * 60 * 1000:
+            row["status"] = "已中断"
+            changed = True
+    return changed
+
+
 def _write_history(rows: list[dict]) -> None:
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = HISTORY_FILE.with_suffix(".tmp")
@@ -327,6 +358,8 @@ def _write_history(rows: list[dict]) -> None:
 @app.get("/api/agent/sessions")
 def list_agent_sessions():
     rows = _load_history()
+    if _normalize_stale(rows):
+        _write_history(rows)
     rows.sort(key=lambda r: int(r.get("updatedAt") or 0), reverse=True)
     sessions = []
     for row in rows:
@@ -360,7 +393,10 @@ def delete_agent_session(session_key: str):
 
 @app.get("/api/agent/sessions/{session_key}")
 def get_agent_session(session_key: str):
-    for row in _load_history():
+    rows = _load_history()
+    if _normalize_stale(rows):
+        _write_history(rows)
+    for row in rows:
         if row.get("id") == session_key:
             return row
     raise HTTPException(404, "session not found")

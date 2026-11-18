@@ -181,7 +181,7 @@ const {
 const suggestions = [
   '诊断 5 个地块，说明每个地块的主要限制，并给出分地块建议。',
   '比较 A/B/C 三条路线，核算两年费用、材料与淋洗水，写成 outputs/route-compare.md。',
-  '生成两年实施与监测计划，写入 outputs/two-year-plan.md。',
+  '只生成两年实施与监测计划，写入 outputs/two-year-plan.md，最终回答 200 字摘要，不要重复诊断。',
 ]
 
 const toolCount = computed(() => agentMessages.value.filter(m => m.kind === 'tool').length)
