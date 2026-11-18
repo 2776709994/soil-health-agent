@@ -9,3 +9,5 @@ Thumbs.db
 /dsh-runtime/
 __pycache__/
 *.pyc
+/frontend/dist/
+/frontend/.vite/
