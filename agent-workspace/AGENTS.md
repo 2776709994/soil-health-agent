@@ -67,11 +67,30 @@
 
 如果用户只要求“生成计划/写入文件”，直接生成目标文件，最终回复只给 200 字以内摘要，不要重复完整诊断、逐地块计算或无关推导。
 
-## 工具与技能
+## 工具与技能（工具优先，强制）
 
-- 遇到诊断、方案比较、定量计算任务时，先加载 `soil-health` 技能；若技能工具不可用，用文件工具读取 `../.agents/skills/soil-health/SKILL.md`。
-- 如果环境提供 `soil_*` 工具，优先调用工具；工具结果是唯一数字来源。
-- 如果环境没有工具，可以手算，但必须展示公式、代入值和单位，并标注“教学估算”。
+遇到诊断、方案比较、定量计算或计划任务时：
+
+1. 先加载 `soil-health` 技能；若技能工具不可用，读取 `../.agents/skills/soil-health/SKILL.md`。
+2. 必须优先调用以下 MCP 工具，**工具结果是唯一数字来源**：
+   - `mcp__soil__soil_qc`：质控；可选传入自定义 plots 或 ec_method。
+   - `mcp__soil__soil_diagnose`：5 地块诊断、规则 ID、缺失信息。
+   - `mcp__soil__soil_calc_material`：M、Q、原料→成品、干基。
+   - `mcp__soil__soil_calc_water`：LR、m³/亩·年、40 上限。
+   - `mcp__soil__soil_compare_routes`：A/B/C 比较、资源、预算、情景。
+   - `mcp__soil__soil_gypsum_check`：ESP/CEC 缺失时必须返回 refused；不得绕过。
+   - `mcp__soil__soil_write_report`：确定性生成 `outputs/two-year-plan.md` 或摘要。
+3. **任务模式**：
+   - 诊断：`soil_qc` → `soil_diagnose` → 解释。
+   - 路线比较：`soil_diagnose` → `soil_compare_routes` → 解释。
+   - 定量：`soil_calc_material` / `soil_calc_water` / `soil_gypsum_check`。
+   - 计划/报告：`soil_compare_routes` → `soil_write_report(kind="two_year_plan")` → 只给 200 字摘要。
+4. **不要用 pwsh、Python 或手写脚本重算工具已经给出的数字**；不要手写计划文件覆盖 `soil_write_report` 的输出。
+5. 如果工具不可用或报错：
+   - 明确说明“工具不可用，以下为教学估算”；
+   - 用技能中的公式手算，展示公式、代入值、单位和假设；
+   - 不得假装工具结果存在。
+6. 最终回答必须带上工具返回的 `rule_ids`、`source_ids` 或“待核对”标识；不得编造标准号。
 
 ## 禁止
 

@@ -9,6 +9,20 @@ description: 盐碱化耕地土壤健康诊断与精准改良：盐分/钠化/�
 
 任何涉及本题 5 个地块的诊断、方案比较、材料/水量/费用计算、两年计划或监测安排时，先读本技能和 `data/case.md`。
 
+## 0. MCP 工具对应（优先使用）
+
+| 需求 | 工具 |
+|---|---|
+| 质控/单位/缺失 | `mcp__soil__soil_qc` |
+| 5 地块诊断/规则 | `mcp__soil__soil_diagnose` |
+| M、Q、原料→成品 | `mcp__soil__soil_calc_material` |
+| LR、m³/亩·年 | `mcp__soil__soil_calc_water` |
+| A/B/C 比较、资源/预算 | `mcp__soil__soil_compare_routes` |
+| 石膏条件性估算 | `mcp__soil__soil_gypsum_check` |
+| 生成两年计划/摘要 | `mcp__soil__soil_write_report` |
+
+工具结果是唯一数字来源；工具不可用时才按本技能公式手算，并标注“教学估算”。
+
 ## 1. 诊断顺序
 
 1. **质控**：pH 是否 1:2.5；EC 是否 ECe（25℃饱和糊状土）；单位是否 g/kg、g/cm³、dS/m、%；是否有负值/缺失。

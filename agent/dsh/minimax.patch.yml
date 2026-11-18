@@ -28,3 +28,12 @@
   config:
     provider: minimax
     model: MiniMax-M3.1-Flash
+
+- insert:
+    - id: mcp-soil
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: soil
+        transport: streamable-http
+        url: http://127.0.0.1:8100/mcp
+        toolCallTimeoutMs: 120000
