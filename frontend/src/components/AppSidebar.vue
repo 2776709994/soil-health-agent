@@ -15,7 +15,7 @@
           v-for="item in group.items"
           :key="item.id"
           class="nav-item"
-          :class="{ active: item.active || (item.id === 'chat' && chatOpen) }"
+          :class="{ active: item.id === 'console' ? activeTab !== 'agent' : item.id === 'chat' ? activeTab === 'agent' : false }"
           @click="handleNav(item)"
         >
           <app-icon :name="item.icon" :size="17" />
@@ -63,6 +63,6 @@ import { storeToRefs } from 'pinia'
 import { useCaseStore } from '@/stores/useCaseStore'
 
 const store = useCaseStore()
-const { navGroups, plots, selectedPlot, chatOpen } = storeToRefs(store)
+const { navGroups, plots, selectedPlot, chatOpen, activeTab } = storeToRefs(store)
 const { handleNav, selectPlot, switchTab } = store
 </script>

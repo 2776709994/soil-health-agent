@@ -29,6 +29,18 @@ export const useCaseStore = defineStore('case', () => {
       thinking: '',
     },
   ])
+  const agentMessages = ref([])
+  const agentPrompt = ref('')
+  const agentRunning = ref(false)
+  const agentStatus = ref('待命')
+  const agentError = ref('')
+  const agentFinal = ref('')
+  const agentTaskId = ref('')
+  const agentSessionId = ref('')
+  const agentArtifacts = ref([])
+  const artifactOpen = ref(false)
+  const artifactName = ref('')
+  const artifactContent = ref('')
 
   const tabs = ref([
     { id: 'overview', label: '总览' },
@@ -318,6 +330,198 @@ export const useCaseStore = defineStore('case', () => {
     chatOpen.value = false
   }
 
+  const refreshArtifacts = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/artifacts`)
+      if (!res.ok) return
+      const data = await res.json()
+      agentArtifacts.value = data.files || []
+    } catch (e) {
+      // artifacts are optional
+    }
+  }
+
+  const openAgent = () => {
+    activeTab.value = 'agent'
+    chatOpen.value = false
+    calcOpen.value = false
+    refreshArtifacts()
+  }
+
+  const newAgentTask = () => {
+    if (agentRunning.value) cancelAgent()
+    agentMessages.value = []
+    agentFinal.value = ''
+    agentError.value = ''
+    agentSessionId.value = ''
+    agentTaskId.value = ''
+    agentStatus.value = '待命'
+    agentPrompt.value = ''
+  }
+
+  const handleAgentEvent = (event) => {
+    if (!event || !event.type) return
+    if (event.type === 'task') {
+      agentTaskId.value = event.taskId || agentTaskId.value
+      return
+    }
+    if (event.type === 'session') {
+      agentSessionId.value = event.sessionId || agentSessionId.value
+      return
+    }
+    if (event.type === 'status') {
+      if (event.phase === 'step_start') agentStatus.value = '执行中'
+      return
+    }
+    if (event.type === 'thinking' && event.text) {
+      agentMessages.value.push({ kind: 'thinking', text: event.text })
+      return
+    }
+    if (event.type === 'text' && event.text) {
+      agentMessages.value.push({ kind: 'text', text: event.text })
+      return
+    }
+    if (event.type === 'tool_call') {
+      agentMessages.value.push({
+        kind: 'tool',
+        callId: event.callId,
+        tool: event.tool || 'tool',
+        input: event.input || {},
+        status: 'running',
+        result: '',
+      })
+      return
+    }
+    if (event.type === 'tool_result') {
+      const tool = agentMessages.value.find(m => m.kind === 'tool' && m.callId === event.callId)
+      if (tool) {
+        tool.status = event.status || 'completed'
+        tool.result = String(event.result || '').slice(0, 4000)
+      }
+      return
+    }
+    if (event.type === 'final') {
+      const finalText = event.text || ''
+      if (finalText.trim()) {
+        for (let i = agentMessages.value.length - 1; i >= 0; i -= 1) {
+          const m = agentMessages.value[i]
+          if (m.kind === 'text' && m.text.trim() === finalText.trim()) {
+            agentMessages.value.splice(i, 1)
+            break
+          }
+        }
+      }
+      agentFinal.value = finalText
+      agentSessionId.value = event.sessionId || agentSessionId.value
+      if (!finalText && agentError.value) return
+      agentStatus.value = '完成'
+      agentRunning.value = false
+      refreshArtifacts()
+      return
+    }
+    if (event.type === 'turn_end' && (event.reason || {}).kind === 'max-tokens') {
+      agentError.value = '模型思考超长，未产出最终答案。请缩短问题或重试。'
+      agentStatus.value = '失败'
+      agentRunning.value = false
+      return
+    }
+    if (event.type === 'agent_error') {
+      agentError.value = event.message || 'Agent 执行失败'
+      agentStatus.value = '失败'
+      agentRunning.value = false
+    }
+  }
+
+  const runAgent = async (prompt) => {
+    const text = String(prompt ?? agentPrompt.value).trim()
+    if (!text || agentRunning.value) return
+    agentMessages.value.push({ kind: 'user', text })
+    agentPrompt.value = ''
+    agentFinal.value = ''
+    agentError.value = ''
+    agentStatus.value = '运行中'
+    agentRunning.value = true
+    const taskId = `task-${Date.now()}`
+    agentTaskId.value = taskId
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          session_id: agentSessionId.value || undefined,
+          task_id: taskId,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || `HTTP ${res.status}`)
+      }
+      if (!res.body) throw new Error('当前浏览器不支持流式响应')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let index = buffer.indexOf('\n\n')
+        while (index >= 0) {
+          const chunk = buffer.slice(0, index)
+          buffer = buffer.slice(index + 2)
+          const data = chunk
+            .split('\n')
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).trim())
+            .join('\n')
+          if (data) {
+            try {
+              handleAgentEvent(JSON.parse(data))
+            } catch (e) {
+              // ignore malformed event
+            }
+          }
+          index = buffer.indexOf('\n\n')
+        }
+      }
+      if (agentRunning.value) {
+        agentRunning.value = false
+        if (!agentFinal.value && !agentError.value) {
+          agentError.value = 'Agent 未返回最终答案。'
+          agentStatus.value = '失败'
+        }
+      }
+    } catch (err) {
+      agentError.value = `Agent 服务不可用：${err.message}`
+      agentStatus.value = '失败'
+      agentRunning.value = false
+    }
+  }
+
+  const cancelAgent = async () => {
+    if (!agentTaskId.value) return
+    try {
+      await fetch(`${API_BASE}/api/agent/${agentTaskId.value}/cancel`, { method: 'POST' })
+    } catch (e) {
+      // ignore
+    }
+    agentRunning.value = false
+    agentStatus.value = '已停止'
+  }
+
+  const openArtifact = async (path) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/artifact?path=${encodeURIComponent(path)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      artifactName.value = data.name || path
+      artifactContent.value = data.content || ''
+      artifactOpen.value = true
+    } catch (err) {
+      agentError.value = `读取产物失败：${err.message}`
+    }
+  }
+
   const openSource = (id) => {
     activeSourceId.value = id
     sourceOpen.value = true
@@ -419,7 +623,7 @@ export const useCaseStore = defineStore('case', () => {
       return
     }
     if (item.id === 'chat') {
-      openChat()
+      openAgent()
       return
     }
     if (item.id === 'library') {
@@ -504,6 +708,18 @@ export const useCaseStore = defineStore('case', () => {
     chatLoading,
     chatInput,
     chatMessages,
+    agentMessages,
+    agentPrompt,
+    agentRunning,
+    agentStatus,
+    agentError,
+    agentFinal,
+    agentTaskId,
+    agentSessionId,
+    agentArtifacts,
+    artifactOpen,
+    artifactName,
+    artifactContent,
     isReduced,
     kpiWater,
     init,
@@ -513,6 +729,12 @@ export const useCaseStore = defineStore('case', () => {
     closeCalc,
     openChat,
     closeChat,
+    openAgent,
+    newAgentTask,
+    runAgent,
+    cancelAgent,
+    refreshArtifacts,
+    openArtifact,
     openSource,
     openTestPlan,
     changeScenario,

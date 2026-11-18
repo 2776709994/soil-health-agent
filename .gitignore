@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 /frontend/dist/
 /frontend/.vite/
+agent-workspace/outputs/

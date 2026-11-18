@@ -5,43 +5,47 @@
     <main ref="mainEl" class="main">
       <div v-if="scenarioLoading" class="top-progress"></div>
 
-      <TopBar />
-      <KpiGrid />
-
-      <nav class="tabs" role="tablist">
-        <button
-          v-for="(t, i) in tabs"
-          :key="t.id"
-          class="tab"
-          :class="{ active: activeTab === t.id }"
-          :data-tab="t.id"
-          :title="'快捷键 ' + (i + 1)"
-          @click="switchTab(t.id)"
-        >
-          {{ t.label }}
-        </button>
-      </nav>
-
-      <section v-if="loading" class="loading-wrap">
-        <div v-for="n in 3" :key="n" class="skeleton-card">
-          <div class="sk-line w40"></div>
-          <div class="sk-line w80"></div>
-          <div class="sk-line w60"></div>
-        </div>
-      </section>
+      <AgentPanel v-if="activeTab === 'agent'" />
 
       <template v-else>
-        <OverviewPanel v-if="activeTab === 'overview'" />
-        <QcPanel v-else-if="activeTab === 'qc'" />
-        <LimitsPanel v-else-if="activeTab === 'limits'" />
-        <RoutesPanel v-else-if="activeTab === 'routes'" />
-        <CostPanel v-else-if="activeTab === 'cost'" />
-        <PlanPanel v-else-if="activeTab === 'plan'" />
-        <SourcesPanel v-else-if="activeTab === 'sources'" />
+        <TopBar />
+        <KpiGrid />
+
+        <nav class="tabs" role="tablist">
+          <button
+            v-for="(t, i) in tabs"
+            :key="t.id"
+            class="tab"
+            :class="{ active: activeTab === t.id }"
+            :data-tab="t.id"
+            :title="'快捷键 ' + (i + 1)"
+            @click="switchTab(t.id)"
+          >
+            {{ t.label }}
+          </button>
+        </nav>
+
+        <section v-if="loading" class="loading-wrap">
+          <div v-for="n in 3" :key="n" class="skeleton-card">
+            <div class="sk-line w40"></div>
+            <div class="sk-line w80"></div>
+            <div class="sk-line w60"></div>
+          </div>
+        </section>
+
+        <template v-else>
+          <OverviewPanel v-if="activeTab === 'overview'" />
+          <QcPanel v-else-if="activeTab === 'qc'" />
+          <LimitsPanel v-else-if="activeTab === 'limits'" />
+          <RoutesPanel v-else-if="activeTab === 'routes'" />
+          <CostPanel v-else-if="activeTab === 'cost'" />
+          <PlanPanel v-else-if="activeTab === 'plan'" />
+          <SourcesPanel v-else-if="activeTab === 'sources'" />
+        </template>
       </template>
     </main>
 
-    <RightRail />
+    <RightRail v-if="activeTab !== 'agent'" />
 
     <transition name="fade">
       <div v-if="calcOpen" class="drawer-scrim" @click="closeCalc"></div>
@@ -54,6 +58,11 @@
     <ChatDrawer />
     <SourceDrawer />
     <TestPlanDialog />
+    <ArtifactDialog />
+
+    <button v-if="!chatOpen" class="agent-fab" title="打开对话助手" @click="openChat">
+      <app-icon name="chat" :size="23" />
+    </button>
   </div>
 </template>
 
@@ -77,10 +86,12 @@ import CalcDrawer from '@/components/CalcDrawer.vue'
 import ChatDrawer from '@/components/ChatDrawer.vue'
 import SourceDrawer from '@/components/SourceDrawer.vue'
 import TestPlanDialog from '@/components/TestPlanDialog.vue'
+import AgentPanel from '@/components/AgentPanel.vue'
+import ArtifactDialog from '@/components/ArtifactDialog.vue'
 
 const store = useCaseStore()
 const { tabs, activeTab, loading, scenarioLoading, calcOpen, chatOpen } = storeToRefs(store)
-const { init, closeCalc, closeChat, switchTab } = store
+const { init, closeCalc, closeChat, switchTab, openChat } = store
 
 const mainEl = ref(null)
 
